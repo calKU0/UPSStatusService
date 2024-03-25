@@ -91,7 +91,7 @@ namespace UPSStatusService
                             foreach (var item in phoneNumbers)
                             {
                                 Send("aSMSS G001 " + item.Trim() + " N 167 " + message);
-                                Thread.Sleep(3000);
+                                Thread.Sleep(5000);
                             }
 
                             Send("aLOGO G001");
