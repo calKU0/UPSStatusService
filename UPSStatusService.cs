@@ -8,6 +8,7 @@ using System.Configuration;
 using System.Net.Sockets;
 using SnmpSharpNet;
 using System.Threading;
+using System.Net;
 
 namespace UPSStatusService
 {
@@ -16,6 +17,8 @@ namespace UPSStatusService
         private System.Timers.Timer timer;
         private NetworkStream stream;
         private TcpClient client;
+        private string currentIP = "";
+        private string previousIP = "";
         private readonly int secondsBetweenRequest = Convert.ToInt16(ConfigurationManager.AppSettings["secondsBetweenRequest"]);
         private readonly string ipUps = ConfigurationManager.AppSettings["ipUps"];
         private readonly string ipSms = ConfigurationManager.AppSettings["ipSms"];
@@ -125,11 +128,65 @@ namespace UPSStatusService
                 {
                     Log.Warning("Can't retrieve information from the UPS");
                 }
+
+                //Checking IP change
+                currentIP = SprawdzZewnetrznyIP();
+                if (previousIP == "")
+                {
+                    previousIP = currentIP;
+                }
+
+                if (currentIP != previousIP && currentIP != "")
+                {
+                    string message = $"Wykryto zmianę adresu IP. {Environment.NewLine} Obecny adres: {currentIP} {Environment.NewLine} Poprzedni adres: {previousIP} {Environment.NewLine}Wiadomosc wygenerowana przez GaskaUPSStatusService";
+
+                    using (client = new TcpClient(ipSms, portSms))
+                    {
+                        ClientReceive();
+                        Send("aLOGI G001 7705");
+                        Thread.Sleep(500);
+
+                        foreach (var item in phoneNumbers)
+                        {
+                            Send("aSMSS G001 " + item.Trim() + " N 167 " + message);
+                            Thread.Sleep(2000);
+                        }
+
+                        Send("aLOGO G001");
+                        client.Close();
+                    }
+                    previousIP = currentIP;
+                }
+
             }
             catch (Exception ex)
             {
                 Log.Error(ex.ToString());
             }
+        }
+
+        private string SprawdzZewnetrznyIP()
+        {
+            string finalResponse = "";
+            try
+            {
+                WebRequest webRequest = WebRequest.Create("http://checkip.dyndns.org");
+                WebResponse webResponse = webRequest.GetResponse();
+                string response;
+                using (StreamReader sr = new StreamReader(webResponse.GetResponseStream()))
+                {
+                    response = sr.ReadToEnd();
+                }
+                int firstIndex = response.IndexOf("<body>") + 6;
+                int lastIndex = response.LastIndexOf("</body>");
+                finalResponse = response.Substring(firstIndex, lastIndex - firstIndex).Replace("Current IP Address:", "").Trim();
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex.ToString());
+            }
+
+            return finalResponse;
         }
         public void Send(string wiadomosc)
         {
